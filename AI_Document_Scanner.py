@@ -1,11 +1,16 @@
 import streamlit as st
 from PIL import Image
-import requests
 import json
 import io
 import base64
 import pandas as pd
+import cv2
+import numpy as np
+import easyocr
+import re
 from datetime import datetime
+
+reader = easyocr.Reader(['en'])
 
 
 # -------------------------------
@@ -84,6 +89,7 @@ if "image" not in st.session_state:
 
     st.session_state.image = None
 
+        
 
 
 # -------------------------------
@@ -125,14 +131,8 @@ with st.sidebar:
     st.divider()
 
 
-    webhook_url = st.text_input(
-        "Enter n8n Webhook URL",
-        placeholder="https://your-n8n-url/webhook/scanner"
-    )
 
-
-    st.session_state.webhook = webhook_url
-
+    
 
 
 # -------------------------------
@@ -211,43 +211,6 @@ with right:
         )
 
 
-
-# -------------------------------
-# Scan Button
-# -------------------------------
-
-
-if st.session_state.image:
-
-
-    if st.button(
-        "🔍 Scan Document",
-        use_container_width=True
-    ):
-
-
-        with st.spinner(
-            "AI is analyzing the document..."
-        ):
-
-
-            # Function will be added
-            # in next parts
-
-            st.session_state.scan_result = {
-
-                "status":
-                "Waiting for n8n connection"
-
-            }
-
-
-        st.success(
-            "Scanning Completed"
-        )
-
-
-
 # -------------------------------
 # Footer
 # -------------------------------
@@ -257,181 +220,47 @@ st.divider()
 
 
 st.caption(
-    "Built using Python + Streamlit + n8n + AI OCR"
+    "Built using Python + Streamlit + OpenCV + EasyOCR"
 )
 
 # -------------------------------
-# Convert Image Into Base64
+# Image Preprocessing
 # -------------------------------
 
-def image_to_base64(image):
+def preprocess_image(image):
 
-    try:
+    # Convert PIL image to NumPy array
+    image = np.array(image)
 
-        buffer = io.BytesIO()
+    # Convert RGB to OpenCV BGR format
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-        image.save(
-            buffer,
-            format="PNG"
-        )
+    # Convert to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        image_bytes = buffer.getvalue()
+    # Remove noise
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
 
+    # Make text clearer
+    processed = cv2.threshold(
+        gray,
+        0,
+        255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )[1]
 
-        encoded_image = base64.b64encode(
-            image_bytes
-        ).decode(
-            "utf-8"
-        )
+    return processed
 
+def extract_text(image):
 
-        return encoded_image
+    result = reader.readtext(image)
 
+    extracted_text = ""
 
-    except Exception as error:
+    for item in result:
+        extracted_text += item[1] + "\n"
 
-
-        st.error(
-            f"Image conversion error: {error}"
-        )
-
-        return None
-
-
-
-
-# -------------------------------
-# Send Image To n8n Webhook
-# -------------------------------
-
-
-def send_to_n8n(image, webhook_url):
-
-
-    if webhook_url == "":
-
-
-        return {
-
-            "error":
-            "Please enter n8n webhook URL"
-
-        }
-
-
-
-    try:
-
-
-        encoded_image = image_to_base64(
-            image
-        )
-
-
-        if encoded_image is None:
-
-
-            return {
-
-                "error":
-                "Unable to process image"
-
-            }
-
-
-
-        payload = {
-
-
-            "file_name":
-            "document.png",
-
-
-
-            "image":
-
-            encoded_image,
-
-
-
-            "timestamp":
-
-            str(datetime.now())
-
-        }
-
-
-
-        response = requests.post(
-
-
-            webhook_url,
-
-
-            json=payload,
-
-
-            timeout=60
-
-        )
-
-
-
-        if response.status_code == 200:
-
-
-
-            result = response.json()
-
-
-            return result
-
-
-
-        else:
-
-
-
-            return {
-
-
-                "error":
-
-                f"n8n Error {response.status_code}"
-
-            }
-
-
-
-    except requests.exceptions.Timeout:
-
-
-
-        return {
-
-
-            "error":
-
-            "n8n server timeout"
-
-        }
-
-
-
-
-    except Exception as error:
-
-
-
-        return {
-
-
-            "error":
-
-            str(error)
-
-        }
-
+    return extracted_text
 
 
 
@@ -440,55 +269,11 @@ def send_to_n8n(image, webhook_url):
 # -------------------------------
 
 
-def scan_document(image):
-
-
-    webhook = st.session_state.get(
-        "webhook",
-        ""
-    )
-
-
-    result = send_to_n8n(
-
-        image,
-
-        webhook
-
-    )
-
-
-
-    return result
-
-
-
-
 
 # -------------------------------
 # Replace Temporary Scan Button
 # -------------------------------
 
-if (
-
-    st.session_state.image
-
-    and
-
-    st.session_state.scan_result
-
-    and
-
-    st.session_state.scan_result.get("status")
-
-    ==
-
-    "Waiting for n8n connection"
-
-):
-
-
-    pass
 
 # -------------------------------
 # Get Value Safely
@@ -956,100 +741,6 @@ def validate_document(image):
 # -------------------------------
 
 
-def demo_scan_result():
-
-
-    return {
-
-
-        "transaction_id":
-
-        "TID98473829384",
-
-
-
-        "amount":
-
-        "₹2500",
-
-
-
-        "date":
-
-        "21-07-2026",
-
-
-
-        "time":
-
-        "08:45 PM",
-
-
-
-        "upi_id":
-
-        "example@upi",
-
-
-
-        "merchant":
-
-        "Amazon Shopping",
-
-
-
-        "bank":
-
-        "State Bank Of India",
-
-
-
-        "reference_no":
-
-        "847392847392",
-
-
-
-        "status":
-
-        "SUCCESS",
-
-
-
-        "payment_method":
-
-        "UPI",
-
-
-
-        "note":
-
-        "Online Purchase",
-
-
-
-        "invoice_number":
-
-        "INV123456",
-
-
-
-        "gst_number":
-
-        "33ABCDE1234F1Z5",
-
-
-
-        "total":
-
-        "₹2500"
-
-
-
-    }
-
-
-
 
 # -------------------------------
 # OCR Text Cleaner
@@ -1102,86 +793,133 @@ def clean_text(text):
 # Extract Possible Fields
 # From OCR Text
 # -------------------------------
-
-
 def extract_basic_details(text):
-
 
     data = {}
 
-
-
     text = clean_text(text)
 
+    # -----------------------
+    # Amount
+    # -----------------------
+    amount = re.search(r"[₹rRsINR]+\s*([\d,]+(?:\.\d{2})?)", text, re.IGNORECASE)
 
+    if amount:
+        data["amount"] = "₹" + amount.group(1)
 
-    lines = text.split("\n")
+    # -----------------------
+    # Status
+    # -----------------------
+    if "completed" in text.lower():
+        data["status"] = "COMPLETED"
 
+    elif "success" in text.lower():
+        data["status"] = "SUCCESS"
 
+    elif "failed" in text.lower():
+        data["status"] = "FAILED"
 
-    for line in lines:
+    elif "pending" in text.lower():
+        data["status"] = "PENDING"
 
+    # -----------------------
+    # Date
+    # -----------------------
+    date = re.search(
+        r"\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}",
+        text
+    )
 
+    if date:
+        data["date"] = date.group()
 
-        lower = line.lower()
+    # -----------------------
+    # Time
+    # -----------------------
+    time = re.search(
+        r"\d{1,2}:\d{2}\s?(am|pm|AM|PM)",
+        text
+    )
 
+    if time:
+        data["time"] = time.group()
 
+    # -----------------------
+    # Bank
+    # -----------------------
+    bank = re.search(
+        r"(Bank of [A-Za-z ]+|SBI|HDFC|ICICI|Axis|Canara|Indian Bank)",
+        text,
+        re.IGNORECASE
+    )
 
-        if "amount" in lower:
+    if bank:
+        data["bank"] = bank.group()
 
+    # -----------------------
+    # UPI ID
+    # -----------------------
+    upis = re.findall(
+        r"[A-Za-z0-9._-]+@[A-Za-z0-9]+",
+        text
+    )
 
-            data["amount"] = line
+    if len(upis) > 0:
+        data["upi_id"] = upis[0]
 
+    # -----------------------
+    # Receiver
+    # -----------------------
+    receiver = re.search(
+        r"To:\s*(.+)",
+        text
+    )
 
+    if receiver:
+        data["merchant"] = receiver.group(1).strip()
 
-        elif "transaction" in lower:
+    # -----------------------
+    # Sender
+    # -----------------------
+    sender = re.search(
+        r"From:\s*(.+)",
+        text
+    )
 
+    if sender:
+        data["sender"] = sender.group(1).strip()
 
-            data["transaction_id"] = line
+    # -----------------------
+    # UPI Transaction ID
+    # -----------------------
+    txn = re.search(
+        r"UPI transaction ID\s*([A-Za-z0-9]+)",
+        text,
+        re.IGNORECASE
+    )
 
+    if txn:
+        data["transaction_id"] = txn.group(1)
 
+    # -----------------------
+    # Google Transaction ID
+    # -----------------------
+    google = re.search(
+        r"Google transaction ID\s*([A-Za-z0-9_]+)",
+        text,
+        re.IGNORECASE
+    )
 
-        elif "date" in lower:
+    if google:
+        data["google_transaction_id"] = google.group(1)
 
-
-            data["date"] = line
-
-
-
-        elif "time" in lower:
-
-
-            data["time"] = line
-
-
-
-        elif "upi" in lower:
-
-
-            data["upi_id"] = line
-
-
-
-        elif "bank" in lower:
-
-
-            data["bank"] = line
-
-
-
-        elif "note" in lower:
-
-
-            data["note"] = line
-
-
-
+    # -----------------------
+    # Payment Method
+    # -----------------------
+    if "upi" in text.lower():
+        data["payment_method"] = "UPI"
 
     return data
-
-
-
-
 
 # -------------------------------
 # Safe Scan Controller
@@ -1190,64 +928,38 @@ def extract_basic_details(text):
 
 def process_document(image):
 
-
     if not validate_document(image):
 
-
         return {
-
-
-            "error":
-
-            "Invalid document image"
-
+            "error": "Invalid document image"
         }
-
-
 
     try:
 
+        # Step 1 - Clean image using OpenCV
+        processed_image = preprocess_image(image)
 
-        webhook = st.session_state.get(
-            "webhook",
-            ""
+        # Step 2 - Read text using EasyOCR
+        extracted_text = extract_text(processed_image)
+
+        print("\n===== OCR TEXT =====")
+        print(extracted_text)
+
+        st.text_area(
+            "OCR Output",
+            extracted_text,
+            height=300
         )
+        # Step 3 - Extract useful information
+        result = extract_basic_details(extracted_text)
 
-
-
-        # If user has not added n8n URL
-        # use demo mode
-
-
-        if webhook == "":
-
-
-            return demo_scan_result()
-
-
-
-        else:
-
-
-            return scan_document(
-                image
-            )
-
-
+        return result
 
     except Exception as error:
 
-
         return {
-
-
-            "error":
-
-            str(error)
-
+            "error": str(error)
         }
-
-
 
 
 # -------------------------------
@@ -1286,43 +998,6 @@ if st.session_state.image:
 # -------------------------------
 # Improve n8n Response Formatting
 # -------------------------------
-
-
-def process_n8n_response(response):
-
-
-    try:
-
-
-        if isinstance(response, dict):
-
-
-            return response
-
-
-
-        data = json.loads(
-            response
-        )
-
-
-        return data
-
-
-
-    except Exception:
-
-
-        return {
-
-
-            "error":
-
-            "Invalid response received from AI"
-
-        }
-
-
 
 
 
@@ -1501,7 +1176,7 @@ Features:
 
 ✅ AI Based Data Extraction
 
-✅ n8n Automation Support
+✅ OpenCV Image Enhancement
 
 ✅ Transaction Dashboard
 
@@ -1514,8 +1189,7 @@ Features:
 
 Technology Used:
 
-Python | Streamlit | n8n | OCR | AI
-
+Python | Streamlit | OpenCV | EasyOCR
 
 """
 

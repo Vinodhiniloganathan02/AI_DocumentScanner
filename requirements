@@ -1,4 +1,8 @@
 streamlit
-Pillow
-requests
+opencv-python-headless
+pillow
 pandas
+numpy
+requests
+pytesseract
+easyocr

@@ -1,0 +1,8 @@
+streamlit
+Pillow
+requests
+json
+io
+base64
+pandas
+datetime

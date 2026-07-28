@@ -1,8 +1,6 @@
 streamlit
-Pillow
-requests
-json
-io
-base64
+pillow
 pandas
-datetime
+numpy
+opencv-python-headless==5.0.0.93
+easyocr
